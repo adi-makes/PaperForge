@@ -40,9 +40,9 @@ def init(project_dir: str = typer.Argument(".", help="Target project directory")
     os.makedirs(dot_paperforge_dir, exist_ok=True)
     os.makedirs(assets_dir, exist_ok=True)
 
-    source_template = os.path.join(os.path.dirname(__file__), "..", "assets", "ieee_conference_template.tex")
-    target_template = os.path.join(assets_dir, "ieee_conference_template.tex")
-    if os.path.exists(source_template):
+    source_template = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "ieee_conference_template.tex"))
+    target_template = os.path.abspath(os.path.join(assets_dir, "ieee_conference_template.tex"))
+    if os.path.exists(source_template) and source_template != target_template:
         shutil.copy(source_template, target_template)
 
     config_file = os.path.join(target_path, "config.yaml")
