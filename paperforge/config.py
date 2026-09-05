@@ -21,6 +21,23 @@ DEFAULT_CONFIG = {
 }
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
+    # Auto-load .env file if present
+    env_path = os.path.join(os.path.dirname(os.path.abspath(config_path)), ".env")
+    if not os.path.exists(env_path):
+        env_path = ".env"
+
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip("'\"")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+
     if not os.path.exists(config_path):
         return DEFAULT_CONFIG.copy()
     with open(config_path, "r", encoding="utf-8") as f:
@@ -34,3 +51,4 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
         else:
             merged[k] = v
     return merged
+
