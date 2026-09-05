@@ -26,6 +26,8 @@ paper_*.zip
 NEEDS_INPUT.md
 review_report.md
 TRACKER.md
+ieee_conference_template.md
+*.resolved
 
 # TeX & PDF Build Artifacts
 *.aux
