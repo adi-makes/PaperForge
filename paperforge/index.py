@@ -76,6 +76,16 @@ class HybridIndex:
         if tokenized_corpus:
             self.bm25 = BM25Okapi(tokenized_corpus)
 
+    def delete_evidences(self, ids: List[Any]):
+        """Delete evidence items from ChromaDB collection by their IDs."""
+        if not ids:
+            return
+        string_ids = [str(i) for i in ids]
+        try:
+            self.collection.delete(ids=string_ids)
+        except Exception:
+            pass
+
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """Reciprocal Rank Fusion (RRF) search combining Chroma vector search and BM25."""
         vector_results = []

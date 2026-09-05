@@ -1,7 +1,17 @@
 README.md
 pyproject.toml
+paperforge/asset_generator.py
 paperforge/cli.py
 paperforge/config.py
+paperforge/gap_agent.py
+paperforge/index.py
+paperforge/latex_generator.py
+paperforge/parsers.py
+paperforge/planner.py
+paperforge/research_engine.py
+paperforge/reviewer.py
+paperforge/revision_engine.py
+paperforge/scanner.py
 paperforge/tracker.py
 paperforge.egg-info/PKG-INFO
 paperforge.egg-info/SOURCES.txt
@@ -13,3 +23,4 @@ paperforge/db/models.py
 paperforge/db/session.py
 paperforge/providers/embedding.py
 paperforge/providers/llm.py
+tests/test_index.py
