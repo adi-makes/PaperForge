@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment and Secret Files
+.env
+.env.local
+
+# PaperForge Database & Vector Index
+.paperforge/
+*.db
+*.sqlite
+*.sqlite3
+chroma_db/
+
+# Generated Manuscripts, Builds & Zip Artifacts
+paper/
+paper_*.zip
+NEEDS_INPUT.md
+review_report.md
+TRACKER.md
+
+# TeX & PDF Build Artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.pdf
+*.synctex.gz
+
+# Test Repositories & Scratch Workspaces
+test_repo/
+scratch/
+
+# IDE / Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

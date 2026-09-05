@@ -1,0 +1,2 @@
+[console_scripts]
+paperforge = paperforge.cli:app

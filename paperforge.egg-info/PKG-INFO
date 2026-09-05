@@ -1,0 +1,30 @@
+Metadata-Version: 2.4
+Name: paperforge
+Version: 0.1.0
+Summary: Local-first, CLI-only, agentic research-repository tool
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.9.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: sentence-transformers>=2.2.2
+Requires-Dist: chromadb>=0.4.0
+Requires-Dist: rank-bm25>=0.2.2
+Requires-Dist: pymupdf>=1.23.0
+Requires-Dist: pdfplumber>=0.10.0
+Requires-Dist: python-docx>=1.0.0
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: openpyxl>=3.1.0
+Requires-Dist: markdown-it-py>=3.0.0
+Requires-Dist: beautifulsoup4>=4.12.0
+Requires-Dist: lxml>=5.0.0
+Requires-Dist: cairosvg>=2.7.0
+Requires-Dist: pytesseract>=0.3.10
+Requires-Dist: matplotlib>=3.7.0
+
+# PaperForge
+
+Local-first, CLI-only, agentic research-repository tool.
