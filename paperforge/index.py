@@ -4,13 +4,16 @@ from rank_bm25 import BM25Okapi
 import chromadb
 from paperforge.providers.embedding import EmbeddingProvider
 
+MAX_BATCH_SIZE = 5000
+
 class HybridIndex:
-    def __init__(self, chroma_dir: str = ".paperforge/chroma_db", embedding_provider: EmbeddingProvider = None):
+    def __init__(self, chroma_dir: str = ".paperforge/chroma_db", embedding_provider: EmbeddingProvider = None, max_batch_size: int = MAX_BATCH_SIZE):
         self.chroma_dir = os.path.abspath(chroma_dir)
         os.makedirs(self.chroma_dir, exist_ok=True)
         self.client = chromadb.PersistentClient(path=self.chroma_dir)
         self.collection = self.client.get_or_create_collection(name="paperforge_evidences")
         self.embedding_provider = embedding_provider
+        self.max_batch_size = max_batch_size
         self.bm25_documents = []
         self.bm25_metadata = []
         self.bm25 = None
@@ -42,18 +45,27 @@ class HybridIndex:
         # Chroma vector indexing
         if self.embedding_provider:
             embeddings = self.embedding_provider.embed_batch(documents)
-            self.collection.add(
-                ids=ids,
-                documents=documents,
-                embeddings=embeddings,
-                metadatas=metadatas
-            )
+            for i in range(0, len(ids), self.max_batch_size):
+                batch_ids = ids[i : i + self.max_batch_size]
+                batch_documents = documents[i : i + self.max_batch_size]
+                batch_embeddings = embeddings[i : i + self.max_batch_size]
+                batch_metadatas = metadatas[i : i + self.max_batch_size]
+                self.collection.add(
+                    ids=batch_ids,
+                    documents=batch_documents,
+                    embeddings=batch_embeddings,
+                    metadatas=batch_metadatas
+                )
         else:
-            self.collection.add(
-                ids=ids,
-                documents=documents,
-                metadatas=metadatas
-            )
+            for i in range(0, len(ids), self.max_batch_size):
+                batch_ids = ids[i : i + self.max_batch_size]
+                batch_documents = documents[i : i + self.max_batch_size]
+                batch_metadatas = metadatas[i : i + self.max_batch_size]
+                self.collection.add(
+                    ids=batch_ids,
+                    documents=batch_documents,
+                    metadatas=batch_metadatas
+                )
 
         # BM25 indexing update
         for ev, meta in zip(evidences, metadatas):

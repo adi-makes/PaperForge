@@ -5,6 +5,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, MofNCompleteColumn, TimeElapsedColumn
 
 from paperforge.config import load_config
 from paperforge.db.session import init_db, get_session
@@ -29,26 +30,27 @@ console = Console()
 @app.command()
 def init(project_dir: str = typer.Argument(".", help="Target project directory")):
     """Initializes a new PaperForge research repository structure."""
-    target_path = os.path.abspath(project_dir)
-    os.makedirs(target_path, exist_ok=True)
+    with console.status("[bold cyan]Initializing PaperForge project workspace...", spinner="dots"):
+        target_path = os.path.abspath(project_dir)
+        os.makedirs(target_path, exist_ok=True)
 
-    sources_dir = os.path.join(target_path, "sources")
-    dot_paperforge_dir = os.path.join(target_path, ".paperforge")
-    assets_dir = os.path.join(target_path, "assets")
+        sources_dir = os.path.join(target_path, "sources")
+        dot_paperforge_dir = os.path.join(target_path, ".paperforge")
+        assets_dir = os.path.join(target_path, "assets")
 
-    os.makedirs(sources_dir, exist_ok=True)
-    os.makedirs(dot_paperforge_dir, exist_ok=True)
-    os.makedirs(assets_dir, exist_ok=True)
+        os.makedirs(sources_dir, exist_ok=True)
+        os.makedirs(dot_paperforge_dir, exist_ok=True)
+        os.makedirs(assets_dir, exist_ok=True)
 
-    source_template = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "ieee_conference_template.tex"))
-    target_template = os.path.abspath(os.path.join(assets_dir, "ieee_conference_template.tex"))
-    if os.path.exists(source_template) and source_template != target_template:
-        shutil.copy(source_template, target_template)
+        source_template = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "ieee_conference_template.tex"))
+        target_template = os.path.abspath(os.path.join(assets_dir, "ieee_conference_template.tex"))
+        if os.path.exists(source_template) and source_template != target_template:
+            shutil.copy(source_template, target_template)
 
-    config_file = os.path.join(target_path, "config.yaml")
-    if not os.path.exists(config_file):
-        with open(config_file, "w", encoding="utf-8") as f:
-            f.write("""llm:
+        config_file = os.path.join(target_path, "config.yaml")
+        if not os.path.exists(config_file):
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write("""llm:
   provider: ollama
   host: http://localhost:11434
   model: llama3.2
@@ -64,10 +66,10 @@ paths:
   db_path: .paperforge/paperforge.db
 """)
 
-    env_example = os.path.join(target_path, ".env.example")
-    if not os.path.exists(env_example):
-        with open(env_example, "w", encoding="utf-8") as f:
-            f.write("""# PaperForge Environment Variables
+        env_example = os.path.join(target_path, ".env.example")
+        if not os.path.exists(env_example):
+            with open(env_example, "w", encoding="utf-8") as f:
+                f.write("""# PaperForge Environment Variables
 OLLAMA_HOST=http://localhost:11434
 GEMINI_API_KEY=
 GROQ_API_KEY=
@@ -76,10 +78,10 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 """)
 
-    readme_file = os.path.join(target_path, "README.md")
-    if not os.path.exists(readme_file):
-        with open(readme_file, "w", encoding="utf-8") as f:
-            f.write("""# PaperForge Project
+        readme_file = os.path.join(target_path, "README.md")
+        if not os.path.exists(readme_file):
+            with open(readme_file, "w", encoding="utf-8") as f:
+                f.write("""# PaperForge Project
 
 PaperForge is a local-first, CLI-only, agentic research-repository tool that ingests raw research files and produces a self-contained, Overleaf-ready IEEE conference LaTeX manuscript.
 
@@ -95,17 +97,17 @@ PaperForge is a local-first, CLI-only, agentic research-repository tool that ing
 3. Run `paperforge doctor` to verify API connectivity.
 """)
 
-    db_path = os.path.join(dot_paperforge_dir, "paperforge.db")
-    init_db(db_path)
+        db_path = os.path.join(dot_paperforge_dir, "paperforge.db")
+        init_db(db_path)
 
-    tracker_file = os.path.join(target_path, "TRACKER.md")
-    log_tracker(
-        command="paperforge init",
-        summary="Initialized project repository layout",
-        reasoning=f"Created sources/, .paperforge/, assets/, config.yaml, .env.example, README.md at {target_path}",
-        tracker_file=tracker_file,
-        db_path=db_path
-    )
+        tracker_file = os.path.join(target_path, "TRACKER.md")
+        log_tracker(
+            command="paperforge init",
+            summary="Initialized project repository layout",
+            reasoning=f"Created sources/, .paperforge/, assets/, config.yaml, .env.example, README.md at {target_path}",
+            tracker_file=tracker_file,
+            db_path=db_path
+        )
 
     console.print(Panel(f"[bold green]PaperForge project initialized successfully at {target_path}[/bold green]"))
 
@@ -113,23 +115,29 @@ PaperForge is a local-first, CLI-only, agentic research-repository tool that ing
 @app.command()
 def doctor(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Checks configured LLM and Embedding provider health and prints status."""
-    cfg = load_config(config_path)
+    with console.status("[bold cyan]Running PaperForge health checks...", spinner="dots") as status:
+        cfg = load_config(config_path)
+
+        status.update(f"[bold cyan][1/3] Checking LLM provider ({cfg.get('llm', {}).get('provider', 'unknown')})...[/bold cyan]")
+        llm_p = get_llm_provider(cfg)
+        llm_health = llm_p.check_health()
+
+        status.update(f"[bold cyan][2/3] Checking Embedding provider ({cfg.get('embeddings', {}).get('provider', 'unknown')})...[/bold cyan]")
+        emb_p = get_embedding_provider(cfg)
+        emb_health = emb_p.check_health()
+
+        status.update("[bold cyan][3/3] Checking SQLite database file...[/bold cyan]")
+        db_path = cfg.get("paths", {}).get("db_path", ".paperforge/paperforge.db")
+        db_exists = os.path.exists(db_path)
+
     table = Table(title="PaperForge Health Check")
     table.add_column("Component", style="cyan", no_wrap=True)
     table.add_column("Configured Provider", style="magenta")
     table.add_column("Status", style="bold")
     table.add_column("Details")
 
-    llm_p = get_llm_provider(cfg)
-    llm_health = llm_p.check_health()
     table.add_row("LLM Provider", cfg.get("llm", {}).get("provider", "unknown"), "[green]OK[/green]" if llm_health["status"] else "[red]FAILED[/red]", llm_health["message"])
-
-    emb_p = get_embedding_provider(cfg)
-    emb_health = emb_p.check_health()
     table.add_row("Embedding Provider", cfg.get("embeddings", {}).get("provider", "unknown"), "[green]OK[/green]" if emb_health["status"] else "[red]FAILED[/red]", emb_health["message"])
-
-    db_path = cfg.get("paths", {}).get("db_path", ".paperforge/paperforge.db")
-    db_exists = os.path.exists(db_path)
     table.add_row("SQLite DB", db_path, "[green]OK[/green]" if db_exists else "[yellow]NOT INITIALIZED[/yellow]", "Database file present" if db_exists else "Run 'paperforge init' to initialize DB")
 
     console.print(table)
@@ -139,7 +147,26 @@ def doctor(config_path: str = typer.Option("config.yaml", help="Path to config.y
 def scan(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Scans sources/ folder incrementally and indexes evidence."""
     cfg = load_config(config_path)
-    res = scan_sources(cfg)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]{task.description}[/bold cyan]"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("Initializing scan...", total=1)
+
+        def on_progress(current: int, total: int, file_path: str, message: str):
+            if total > 0:
+                progress.update(task_id, total=total, completed=current, description=f"[bold cyan]Scanning sources[/bold cyan] [yellow]{message}[/yellow]")
+            else:
+                progress.update(task_id, description=f"[bold cyan]{message}[/bold cyan]")
+
+        res = scan_sources(cfg, progress_callback=on_progress)
+
     console.print(Panel(
         f"[bold green]Scan Complete[/bold green]\n"
         f"New files: {len(res['new_files'])}\n"
@@ -156,45 +183,49 @@ def ask(question: str = typer.Argument(..., help="Question to ask repository evi
     db_path = cfg.get("paths", {}).get("db_path", ".paperforge/paperforge.db")
     chroma_dir = ".paperforge/chroma_db"
 
-    emb_provider = get_embedding_provider(cfg)
-    hybrid_index = HybridIndex(chroma_dir=chroma_dir, embedding_provider=emb_provider)
-    results = hybrid_index.search(question, top_k=5)
+    with console.status("[bold cyan][1/3] Loading embedding model & hybrid index...", spinner="dots") as status:
+        emb_provider = get_embedding_provider(cfg)
+        hybrid_index = HybridIndex(chroma_dir=chroma_dir, embedding_provider=emb_provider)
+        
+        status.update("[bold cyan][2/3] Searching hybrid vector & keyword index for evidence...", spinner="dots")
+        results = hybrid_index.search(question, top_k=5)
 
-    if not results:
-        session = get_session(db_path)
-        fresh_evs = session.query(Evidence).filter(Evidence.status == StatusEnum.FRESH).limit(5).all()
-        results = [
-            {
-                "id": str(ev.id),
-                "content": ev.extracted_content,
-                "meta": {"location_json": str(ev.location_json), "evidence_type": ev.evidence_type}
-            }
-            for ev in fresh_evs
-        ]
-        session.close()
+        if not results:
+            session = get_session(db_path)
+            fresh_evs = session.query(Evidence).filter(Evidence.status == StatusEnum.FRESH).limit(5).all()
+            results = [
+                {
+                    "id": str(ev.id),
+                    "content": ev.extracted_content,
+                    "meta": {"location_json": str(ev.location_json), "evidence_type": ev.evidence_type}
+                }
+                for ev in fresh_evs
+            ]
+            session.close()
 
-    context_str = ""
-    sources_table = Table(title="Grounded Provenance Citations")
-    sources_table.add_column("Evidence ID", style="cyan")
-    sources_table.add_column("Provenance Location", style="magenta")
-    sources_table.add_column("Snippet Preview", style="white")
+        context_str = ""
+        sources_table = Table(title="Grounded Provenance Citations")
+        sources_table.add_column("Evidence ID", style="cyan")
+        sources_table.add_column("Provenance Location", style="magenta")
+        sources_table.add_column("Snippet Preview", style="white")
 
-    for item in results:
-        ev_id = item.get("id", "N/A")
-        content = item.get("content", "")
-        meta = item.get("meta", {})
-        location = meta.get("location_json", "Unknown")
-        context_str += f"[Evidence #{ev_id} | Provenance: {location}]\n{content}\n\n"
-        sources_table.add_row(f"#{ev_id}", str(location), content[:80].replace("\n", " ") + "...")
+        for item in results:
+            ev_id = item.get("id", "N/A")
+            content = item.get("content", "")
+            meta = item.get("meta", {})
+            location = meta.get("location_json", "Unknown")
+            context_str += f"[Evidence #{ev_id} | Provenance: {location}]\n{content}\n\n"
+            sources_table.add_row(f"#{ev_id}", str(location), content[:80].replace("\n", " ") + "...")
 
-    llm = get_llm_provider(cfg)
-    system_prompt = "You are PaperForge Evidence QA Assistant. Answer based ONLY on provided context. Cite Evidence ID for claims."
-    prompt = f"Question: {question}\n\nRetrieved Evidence:\n{context_str}"
-    
-    try:
-        answer = llm.complete(prompt, system_prompt=system_prompt)
-    except Exception:
-        answer = f"[LLM direct response unavailable - local fallback grounded mode]\nQuestion: {question}\nTop Evidence:\n{context_str}"
+        status.update("[bold cyan][3/3] Querying LLM provider for evidence-grounded response...", spinner="dots")
+        llm = get_llm_provider(cfg)
+        system_prompt = "You are PaperForge Evidence QA Assistant. Answer based ONLY on provided context. Cite Evidence ID for claims."
+        prompt = f"Question: {question}\n\nRetrieved Evidence:\n{context_str}"
+        
+        try:
+            answer = llm.complete(prompt, system_prompt=system_prompt)
+        except Exception:
+            answer = f"[LLM direct response unavailable - local fallback grounded mode]\nQuestion: {question}\nTop Evidence:\n{context_str}"
 
     console.print(Panel(f"[bold blue]Answer:[/bold blue]\n{answer}"))
     console.print(sources_table)
@@ -204,7 +235,10 @@ def ask(question: str = typer.Argument(..., help="Question to ask repository evi
 def summarize(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Generates structured research summary of ingested repo entities (Phase 2)."""
     cfg = load_config(config_path)
-    res = process_research_understanding(cfg)
+    with console.status("[bold cyan]Processing research understanding (Phase 2)...", spinner="dots") as status:
+        status.update("[bold cyan][1/2] Loading ingested evidence & database entities...[/bold cyan]")
+        status.update("[bold cyan][2/2] Synthesizing research summary with LLM...[/bold cyan]")
+        res = process_research_understanding(cfg)
     console.print(Panel(f"[bold green]Research Summary[/bold green]\n{res['summary']}"))
 
 
@@ -212,7 +246,11 @@ def summarize(config_path: str = typer.Option("config.yaml", help="Path to confi
 def claims(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Extracts candidate claims and verifies evidence links (Phase 3)."""
     cfg = load_config(config_path)
-    res = extract_claims_and_contradictions(cfg)
+    with console.status("[bold cyan]Extracting candidate claims and verifying evidence links (Phase 3)...", spinner="dots") as status:
+        status.update("[bold cyan][1/3] Loading fresh evidence records...[/bold cyan]")
+        status.update("[bold cyan][2/3] Extracting candidate claims with LLM...[/bold cyan]")
+        status.update("[bold cyan][3/3] Detecting evidence contradictions across claims...[/bold cyan]")
+        res = extract_claims_and_contradictions(cfg)
     console.print(Panel(f"[bold green]Evidence Claims[/bold green]\nTotal Claims: {res['claims_count']}\nContradictions Detected: {res['contradictions_count']}"))
 
 
@@ -220,10 +258,11 @@ def claims(config_path: str = typer.Option("config.yaml", help="Path to config.y
 def contradictions(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Displays conflicting evidence records for user resolution (Phase 3)."""
     cfg = load_config(config_path)
-    db_path = cfg.get("paths", {}).get("db_path", ".paperforge/paperforge.db")
-    session = get_session(db_path)
-    cons = session.query(Contradiction).all()
-    session.close()
+    with console.status("[bold cyan]Querying detected contradictions from database...", spinner="dots"):
+        db_path = cfg.get("paths", {}).get("db_path", ".paperforge/paperforge.db")
+        session = get_session(db_path)
+        cons = session.query(Contradiction).all()
+        session.close()
 
     table = Table(title="Contradictions Detected")
     table.add_column("ID", style="cyan")
@@ -238,9 +277,31 @@ def contradictions(config_path: str = typer.Option("config.yaml", help="Path to 
 def resume(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Rescans sources/ and updates gap analysis (Phase 4)."""
     cfg = load_config(config_path)
-    scan_sources(cfg)
-    extract_claims_and_contradictions(cfg)
-    gap_res = analyze_gaps_and_update_needs_input(cfg)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]{task.description}[/bold cyan]"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("[1/3] Rescanning sources/ folder...", total=3, completed=0)
+
+        def on_scan_progress(current: int, total: int, file_path: str, message: str):
+            if total > 0:
+                progress.update(task_id, description=f"[bold cyan][1/3] Rescanning sources[/bold cyan] [yellow]{message}[/yellow]")
+
+        scan_sources(cfg, progress_callback=on_scan_progress)
+        progress.update(task_id, completed=1, description="[bold cyan][2/3] Extracting candidate claims & checking contradictions...[/bold cyan]")
+        
+        extract_claims_and_contradictions(cfg)
+        progress.update(task_id, completed=2, description="[bold cyan][3/3] Running gap analysis & updating NEEDS_INPUT.md...[/bold cyan]")
+        
+        gap_res = analyze_gaps_and_update_needs_input(cfg)
+        progress.update(task_id, completed=3, description="[bold green]Resume step execution completed.[/bold green]")
+
     console.print(Panel(f"[bold green]Resume Complete[/bold green]\nBlocking Gaps Remaining: {gap_res['blocking_gaps']}"))
 
 
@@ -248,7 +309,8 @@ def resume(config_path: str = typer.Option("config.yaml", help="Path to config.y
 def status(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Summarizes current stale items, blocking gaps, and project readiness (Phase 4)."""
     cfg = load_config(config_path)
-    st = get_project_status(cfg)
+    with console.status("[bold cyan]Gathering project status & gap metrics...", spinner="dots"):
+        st = get_project_status(cfg)
     console.print(Panel(
         f"[bold blue]PaperForge Project Status[/bold blue]\n"
         f"Verified Claims: {st['verified_claims']}\n"
@@ -264,7 +326,11 @@ def status(config_path: str = typer.Option("config.yaml", help="Path to config.y
 def plan(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Plans IEEE section structure, claim allocation, and assets (Phase 5)."""
     cfg = load_config(config_path)
-    res = generate_paper_plan(cfg)
+    with console.status("[bold cyan]Generating paper plan (Phase 5)...", spinner="dots") as status:
+        status.update("[bold cyan][1/3] Analyzing verified claims & evidence records...[/bold cyan]")
+        status.update("[bold cyan][2/3] Generating IEEE section allocation with LLM...[/bold cyan]")
+        res = generate_paper_plan(cfg)
+        status.update("[bold cyan][3/3] Writing PAPER_PLAN.md...[/bold cyan]")
     console.print(Panel(f"[bold green]Paper Plan Generated[/bold green]\n{res['plan_summary']}"))
 
 
@@ -272,7 +338,11 @@ def plan(config_path: str = typer.Option("config.yaml", help="Path to config.yam
 def assets(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Generates vector figures, TikZ diagrams, booktabs tables, and references.bib (Phase 6)."""
     cfg = load_config(config_path)
-    res = generate_assets(cfg)
+    with console.status("[bold cyan]Generating manuscript assets (Phase 6)...", spinner="dots") as status:
+        status.update("[bold cyan][1/3] Generating vector figures & TikZ diagrams...[/bold cyan]")
+        status.update("[bold cyan][2/3] Generating booktabs tables...[/bold cyan]")
+        status.update("[bold cyan][3/3] Assembling BibTeX references (references.bib)...[/bold cyan]")
+        res = generate_assets(cfg)
     console.print(Panel(f"[bold green]Assets Generated[/bold green]\nFigures: {res['figures']}\nTables: {res['tables']}\nBib: {res['bib']}"))
 
 
@@ -280,12 +350,36 @@ def assets(config_path: str = typer.Option("config.yaml", help="Path to config.y
 def build(apply_review: bool = typer.Option(False, "--apply-review", help="Automatically loop review fixes"), config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Forks IEEE template, assembles manuscript, verifies refs, compiles with Tectonic, and zips Overleaf bundle (Phase 7)."""
     cfg = load_config(config_path)
-    generate_assets(cfg)
-    res = generate_and_compile_paper(cfg)
     
-    if apply_review:
-        perform_peer_review(cfg)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]{task.description}[/bold cyan]"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console
+    ) as progress:
+        total_steps = 5 if apply_review else 4
+        task_id = progress.add_task("[1/4] Generating manuscript assets...", total=total_steps, completed=0)
+
+        progress.update(task_id, completed=0, description="[bold cyan][1/4] Generating figures, tables & references.bib...[/bold cyan]")
+        generate_assets(cfg)
+
+        progress.update(task_id, completed=1, description="[bold cyan][2/4] Assembling LaTeX sections & verifying references...[/bold cyan]")
         res = generate_and_compile_paper(cfg)
+
+        progress.update(task_id, completed=2, description="[bold cyan][3/4] Compiling LaTeX manuscript with Tectonic/pdflatex...[/bold cyan]")
+
+        if apply_review:
+            progress.update(task_id, completed=3, description="[bold cyan][4/5] Performing IEEE peer review pass & applying fixes...[/bold cyan]")
+            perform_peer_review(cfg)
+            res = generate_and_compile_paper(cfg)
+            progress.update(task_id, completed=4, description="[bold cyan][5/5] Packaging Overleaf-ready ZIP bundle...[/bold cyan]")
+        else:
+            progress.update(task_id, completed=3, description="[bold cyan][4/4] Packaging Overleaf-ready ZIP bundle...[/bold cyan]")
+
+        progress.update(task_id, completed=total_steps, description="[bold green]Build execution complete.[/bold green]")
 
     console.print(Panel(
         f"[bold green]Build Successful — Overleaf-Ready Package Created[/bold green]\n"
@@ -299,7 +393,11 @@ def build(apply_review: bool = typer.Option(False, "--apply-review", help="Autom
 def review(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Executes skeptical IEEE peer reviewer pass and writes review_report.md (Phase 8)."""
     cfg = load_config(config_path)
-    res = perform_peer_review(cfg)
+    with console.status("[bold cyan]Executing peer review pass (Phase 8)...", spinner="dots") as status:
+        status.update("[bold cyan][1/3] Preparing manuscript sections & evidence claims...[/bold cyan]")
+        status.update("[bold cyan][2/3] Running skeptical IEEE peer reviewer pass with LLM...[/bold cyan]")
+        res = perform_peer_review(cfg)
+        status.update("[bold cyan][3/3] Writing REVIEW_REPORT.md...[/bold cyan]")
     console.print(Panel(f"[bold green]Peer Review Complete[/bold green]\nVerdict: {res['verdict']}\nReport: {res['report_path']}"))
 
 
@@ -307,7 +405,8 @@ def review(config_path: str = typer.Option("config.yaml", help="Path to config.y
 def show(target_ref: str = typer.Argument(..., help="Section or element reference"), config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Displays manuscript section with line numbers and markers (Phase 9)."""
     cfg = load_config(config_path)
-    out = show_target_content(target_ref, cfg)
+    with console.status("[bold cyan]Fetching manuscript content...", spinner="dots"):
+        out = show_target_content(target_ref, cfg)
     console.print(out)
 
 
@@ -321,22 +420,24 @@ def edit(
 ):
     """Proposes or applies interactive revisions to the manuscript (Phase 9)."""
     cfg = load_config(config_path)
-    if apply is not None:
-        res = apply_edit(apply, cfg)
-        console.print(Panel(f"[bold green]Edit #{apply} Applied[/bold green]\nGit Commit: {res.get('commit_hash')}"))
-    else:
-        res = propose_edit(instruction, target, cfg, allow_unsupported=allow_unsupported)
-        if res["status"] == "BLOCKED":
-            console.print(Panel(f"[bold red]Edit Blocked[/bold red]\n{res['reason']}"))
+    with console.status("[bold cyan]Processing revision (Phase 9)...", spinner="dots"):
+        if apply is not None:
+            res = apply_edit(apply, cfg)
+            console.print(Panel(f"[bold green]Edit #{apply} Applied[/bold green]\nGit Commit: {res.get('commit_hash')}"))
         else:
-            console.print(Panel(f"[bold yellow]Proposed Edit #{res['edit_id']} Preview[/bold yellow]\n{res['diff']}\n\nRun 'paperforge edit --apply {res['edit_id']}' to commit."))
+            res = propose_edit(instruction, target, cfg, allow_unsupported=allow_unsupported)
+            if res["status"] == "BLOCKED":
+                console.print(Panel(f"[bold red]Edit Blocked[/bold red]\n{res['reason']}"))
+            else:
+                console.print(Panel(f"[bold yellow]Proposed Edit #{res['edit_id']} Preview[/bold yellow]\n{res['diff']}\n\nRun 'paperforge edit --apply {res['edit_id']}' to commit."))
 
 
 @app.command()
 def history(config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Displays git commit history inside paper/ directory (Phase 9)."""
     cfg = load_config(config_path)
-    out = get_git_history(cfg)
+    with console.status("[bold cyan]Fetching paper/ git history...", spinner="dots"):
+        out = get_git_history(cfg)
     console.print(Panel(f"[bold blue]Git Commit History[/bold blue]\n{out}"))
 
 
@@ -344,7 +445,8 @@ def history(config_path: str = typer.Option("config.yaml", help="Path to config.
 def revert(commit: str = typer.Argument(..., help="Git commit hash to revert"), config_path: str = typer.Option("config.yaml", help="Path to config.yaml")):
     """Reverts a git commit in paper/ (Phase 9)."""
     cfg = load_config(config_path)
-    res = revert_git_commit(commit, cfg)
+    with console.status(f"[bold cyan]Reverting commit {commit}...", spinner="dots"):
+        res = revert_git_commit(commit, cfg)
     console.print(Panel(f"[bold green]Reverted Commit {res['commit']}[/bold green]"))
 
 

@@ -144,10 +144,10 @@ class PythonCodeParser(BaseParser):
 
 class PDFParser(BaseParser):
     def parse(self, filepath: str) -> List[Dict[str, Any]]:
-        import fitz  # PyMuPDF
+        import pymupdf  # PyMuPDF
         chunks = []
         filename = os.path.basename(filepath)
-        doc = fitz.open(filepath)
+        doc = pymupdf.open(filepath)
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text()
