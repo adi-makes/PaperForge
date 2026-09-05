@@ -70,7 +70,7 @@ Unlike generic AI writing assistants that invent ungrounded claims or hallucinat
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/PaperForge.git
+git clone https://github.com/adi-makes/PaperForge.git
 cd PaperForge
 ```
 
