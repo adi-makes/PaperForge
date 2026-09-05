@@ -23,6 +23,7 @@ from paperforge.asset_generator import generate_assets
 from paperforge.latex_generator import generate_and_compile_paper
 from paperforge.reviewer import perform_peer_review
 from paperforge.revision_engine import show_target_content, propose_edit, apply_edit, get_git_history, revert_git_commit
+from paperforge.reset import reset_repository
 
 app = typer.Typer(name="paperforge", help="Local-first CLI research manuscript generator")
 console = Console()
@@ -448,6 +449,32 @@ def revert(commit: str = typer.Argument(..., help="Git commit hash to revert"), 
     with console.status(f"[bold cyan]Reverting commit {commit}...", spinner="dots"):
         res = revert_git_commit(commit, cfg)
     console.print(Panel(f"[bold green]Reverted Commit {res['commit']}[/bold green]"))
+
+
+@app.command()
+def reset(
+    force: bool = typer.Option(False, "--force", "-f", help="Bypass confirmation prompt"),
+    keep_sources: bool = typer.Option(False, "--keep-sources", help="Preserve files inside sources/ directory"),
+    config_path: str = typer.Option("config.yaml", help="Path to config.yaml")
+):
+    """Resets the PaperForge workspace (removes database, vector indexes, generated paper, assets, reports, and source files)."""
+    if not force:
+        sources_msg = " (including all source files in sources/)" if not keep_sources else " (retaining sources/)"
+        confirm = typer.confirm(f"Are you sure you want to reset the repository{sources_msg}? This action cannot be undone.")
+        if not confirm:
+            console.print("[yellow]Reset cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    cfg = load_config(config_path)
+    with console.status("[bold cyan]Resetting PaperForge project workspace...", spinner="dots"):
+        res = reset_repository(cfg, remove_sources=not keep_sources)
+
+    cleaned_str = "\n".join(f"• {item}" for item in res["cleaned_items"])
+    console.print(Panel(
+        f"[bold green]PaperForge Workspace Reset Complete[/bold green]\n\n"
+        f"Cleaned components:\n{cleaned_str}\n\n"
+        f"Workspace re-initialized to a clean repository state."
+    ))
 
 
 if __name__ == "__main__":

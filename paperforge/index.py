@@ -1,10 +1,88 @@
 import os
-from typing import List, Dict, Any
+import logging
+from typing import List, Dict, Any, Optional, Callable
 from rank_bm25 import BM25Okapi
 import chromadb
 from paperforge.providers.embedding import EmbeddingProvider
 
-MAX_BATCH_SIZE = 5000
+logger = logging.getLogger(__name__)
+
+MAX_BATCH_SIZE = 2000
+
+
+def validate_and_sanitize_batch(
+    ids: List[str],
+    documents: List[str],
+    embeddings: Optional[List[List[float]]] = None,
+    metadatas: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Validates batch input lengths, ID uniqueness, document string integrity,
+    vector embedding dimension alignment, and metadata scalar value types.
+    """
+    if len(ids) != len(documents):
+        raise ValueError(f"Batch length mismatch: {len(ids)} IDs vs {len(documents)} documents")
+
+    if embeddings is not None:
+        if len(ids) != len(embeddings):
+            raise ValueError(f"Batch length mismatch: {len(ids)} IDs vs {len(embeddings)} embeddings")
+        if len(embeddings) > 0:
+            expected_dim = len(embeddings[0])
+            if expected_dim == 0:
+                raise ValueError("Embeddings cannot be empty vectors")
+            for idx, emb in enumerate(embeddings):
+                if not isinstance(emb, (list, tuple)):
+                    raise ValueError(f"Embedding at index {idx} must be a list/tuple, got {type(emb).__name__}")
+                if len(emb) != expected_dim:
+                    raise ValueError(f"Embedding dimension mismatch at index {idx}: expected {expected_dim}, got {len(emb)}")
+
+    if metadatas is not None:
+        if len(ids) != len(metadatas):
+            raise ValueError(f"Batch length mismatch: {len(ids)} IDs vs {len(metadatas)} metadatas")
+
+    seen_ids = set()
+    sanitized_ids = []
+    for idx, raw_id in enumerate(ids):
+        str_id = str(raw_id).strip()
+        if not str_id:
+            raise ValueError(f"Invalid empty ID at index {idx}")
+        if str_id in seen_ids:
+            raise ValueError(f"Duplicate ID found within batch: {str_id}")
+        seen_ids.add(str_id)
+        sanitized_ids.append(str_id)
+
+    sanitized_documents = []
+    for idx, doc in enumerate(documents):
+        if doc is None:
+            sanitized_documents.append("")
+        elif not isinstance(doc, str):
+            sanitized_documents.append(str(doc))
+        else:
+            sanitized_documents.append(doc)
+
+    sanitized_metadatas = None
+    if metadatas is not None:
+        sanitized_metadatas = []
+        for meta in metadatas:
+            clean_meta = {}
+            if isinstance(meta, dict):
+                for k, v in meta.items():
+                    key_str = str(k)
+                    if v is None:
+                        clean_meta[key_str] = ""
+                    elif isinstance(v, (str, int, float, bool)):
+                        clean_meta[key_str] = v
+                    else:
+                        clean_meta[key_str] = str(v)
+            sanitized_metadatas.append(clean_meta)
+
+    return {
+        "ids": sanitized_ids,
+        "documents": sanitized_documents,
+        "embeddings": embeddings,
+        "metadatas": sanitized_metadatas
+    }
+
 
 class HybridIndex:
     def __init__(self, chroma_dir: str = ".paperforge/chroma_db", embedding_provider: EmbeddingProvider = None, max_batch_size: int = MAX_BATCH_SIZE):
@@ -18,7 +96,11 @@ class HybridIndex:
         self.bm25_metadata = []
         self.bm25 = None
 
-    def add_evidences(self, evidences: List[Dict[str, Any]]):
+    def add_evidences(
+        self,
+        evidences: List[Dict[str, Any]],
+        batch_progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ):
         """
         evidences format:
         [{
@@ -32,45 +114,59 @@ class HybridIndex:
             return
 
         ids = [str(ev["id"]) for ev in evidences]
-        documents = [ev["extracted_content"] for ev in evidences]
+        documents = [str(ev.get("extracted_content", "")) for ev in evidences]
         metadatas = [
             {
                 "source_id": str(ev.get("source_id", "")),
                 "location_json": str(ev.get("location_json", {})),
-                "evidence_type": ev.get("evidence_type", "unknown")
+                "evidence_type": str(ev.get("evidence_type", "unknown"))
             }
             for ev in evidences
         ]
 
-        # Chroma vector indexing
+        total_items = len(ids)
+        num_batches = (total_items + self.max_batch_size - 1) // self.max_batch_size
+
         if self.embedding_provider:
             embeddings = self.embedding_provider.embed_batch(documents)
-            for i in range(0, len(ids), self.max_batch_size):
-                batch_ids = ids[i : i + self.max_batch_size]
-                batch_documents = documents[i : i + self.max_batch_size]
-                batch_embeddings = embeddings[i : i + self.max_batch_size]
-                batch_metadatas = metadatas[i : i + self.max_batch_size]
-                self.collection.add(
-                    ids=batch_ids,
-                    documents=batch_documents,
-                    embeddings=batch_embeddings,
-                    metadatas=batch_metadatas
-                )
         else:
-            for i in range(0, len(ids), self.max_batch_size):
-                batch_ids = ids[i : i + self.max_batch_size]
-                batch_documents = documents[i : i + self.max_batch_size]
-                batch_metadatas = metadatas[i : i + self.max_batch_size]
-                self.collection.add(
-                    ids=batch_ids,
-                    documents=batch_documents,
-                    metadatas=batch_metadatas
-                )
+            embeddings = None
+
+        for b_idx in range(num_batches):
+            start = b_idx * self.max_batch_size
+            end = min(start + self.max_batch_size, total_items)
+
+            batch_ids = ids[start:end]
+            batch_documents = documents[start:end]
+            batch_metadatas = metadatas[start:end]
+            batch_embeddings = embeddings[start:end] if embeddings else None
+
+            msg = f"Indexing batch {b_idx + 1}/{num_batches} ({len(batch_ids)} items)..."
+            if batch_progress_callback:
+                batch_progress_callback(b_idx + 1, num_batches, msg)
+            logger.info(msg)
+
+            validated = validate_and_sanitize_batch(
+                ids=batch_ids,
+                documents=batch_documents,
+                embeddings=batch_embeddings,
+                metadatas=batch_metadatas
+            )
+
+            add_kwargs = {
+                "ids": validated["ids"],
+                "documents": validated["documents"],
+                "metadatas": validated["metadatas"]
+            }
+            if validated["embeddings"] is not None:
+                add_kwargs["embeddings"] = validated["embeddings"]
+
+            self.collection.add(**add_kwargs)
 
         # BM25 indexing update
         for ev, meta in zip(evidences, metadatas):
-            self.bm25_documents.append(ev["extracted_content"])
-            self.bm25_metadata.append({"id": str(ev["id"]), "content": ev["extracted_content"], "meta": meta})
+            self.bm25_documents.append(str(ev.get("extracted_content", "")))
+            self.bm25_metadata.append({"id": str(ev["id"]), "content": str(ev.get("extracted_content", "")), "meta": meta})
         
         tokenized_corpus = [doc.lower().split() for doc in self.bm25_documents]
         if tokenized_corpus:
@@ -113,20 +209,4 @@ class HybridIndex:
                     bm25_results.append(self.bm25_metadata[idx])
 
         # 3. Reciprocal Rank Fusion (RRF)
-        rrf_scores = {}
-        item_map = {}
-        k = 60
-
-        for rank, item in enumerate(vector_results):
-            item_id = item["id"]
-            rrf_scores[item_id] = rrf_scores.get(item_id, 0.0) + (1.0 / (k + rank + 1))
-            item_map[item_id] = item
-
-        for rank, item in enumerate(bm25_results):
-            item_id = item["id"]
-            rrf_scores[item_id] = rrf_scores.get(item_id, 0.0) + (1.0 / (k + rank + 1))
-            item_map[item_id] = item
-
-        sorted_ids = sorted(rrf_scores.keys(), key=lambda i: rrf_scores[i], reverse=True)
-        final_results = [item_map[i] for i in sorted_ids[:top_k]]
-        return final_results
+        rrf_score

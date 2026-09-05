@@ -155,7 +155,11 @@ def scan_sources(
                 }
                 for ev in ev_objects
             ]
-            hybrid_index.add_evidences(ev_to_index)
+            def batch_cb(b_num, b_tot, b_msg):
+                if progress_callback:
+                    progress_callback(i - 1, total_files, rel_path, f"{rel_path}: {b_msg}")
+
+            hybrid_index.add_evidences(ev_to_index, batch_progress_callback=batch_cb)
 
         elif existing_source.content_hash != current_hash:
             # CHANGED file -> Staleness propagation & re-indexing
@@ -225,7 +229,11 @@ def scan_sources(
                 }
                 for ev in ev_objects
             ]
-            hybrid_index.add_evidences(ev_to_index)
+            def batch_cb(b_num, b_tot, b_msg):
+                if progress_callback:
+                    progress_callback(i - 1, total_files, rel_path, f"{rel_path}: {b_msg}")
+
+            hybrid_index.add_evidences(ev_to_index, batch_progress_callback=batch_cb)
 
         else:
             unchanged_files.append(rel_path)
